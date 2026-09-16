@@ -1,6 +1,18 @@
 # Baseline Predictive Pipeline -- ETAI
+20260674 - Marin Cepeleaga
 
-This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
+LR - Train accuracy: 0.679
+Test accuracy:  0.678
+Gap (train - test): +0.001
+Generalização aparentemente muito mais estável.
+
+
+DT - Train accuracy: 0.705
+Test accuracy:  0.653
+Gap (train - test): +0.052
+Evidência de maior diferença entre treino e teste.
+
+Por enquanto o de regressão logistica está melhor porque tem um gap menor e um test acc maior.
 
 The task: predict two-year recidivism using ProPublica's COMPAS
 dataset -- the data behind a real 2016 investigation into a risk-
@@ -111,3 +123,124 @@ You're free to improve on this structure or restructure it entirely -- what matt
 ## Dataset
 
 See `data/README.md`.
+
+
+    STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT
+
+Increase the number of iterations to improve the convergence (max_iter=1000).
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+Please also refer to the documentation for alternative solver options:
+    https://scikit-learn.org/stable/modules/linear_model.html#logistic-regression
+  n_iter_i = _check_optimize_result(
+Train accuracy: 0.679
+Test accuracy:  0.678
+Gap (train - test): +0.001
+
+Classification report (test set):
+              precision    recall  f1-score   support
+
+           0       0.69      0.74      0.72       684
+           1       0.66      0.60      0.63       568
+
+    accuracy                           0.68      1252
+   macro avg       0.68      0.67      0.67      1252
+weighted avg       0.68      0.68      0.68      1252
+
+False positive rate by race
+(share of people who did NOT reoffend, but were predicted to)
+
+  Our model:
+     African-American    FPR = 0.50  (n=6)
+     Caucasian           FPR = 0.00  (n=1)
+    -                    FPR = 0.20  (n=5)
+    ?                    FPR = 0.33  (n=3)
+    AFRICAN-AMERICAN     FPR = 0.00  (n=4)
+    African American     FPR = 0.33  (n=3)
+    African-American     FPR = 0.33  (n=303)
+    Asian                FPR = 0.33  (n=3)
+    CAUCASIAN            FPR = 0.25  (n=4)
+    Caucasian            FPR = 0.24  (n=232)
+    Hispanic             FPR = 0.10  (n=61)
+    Native American      FPR = 0.00  (n=2)
+    Other                FPR = 0.15  (n=41)
+    african-american     FPR = 0.10  (n=10)
+    caucasian            FPR = 0.00  (n=3)
+    hispanic             FPR = 0.33  (n=3)
+
+  COMPAS's own score:
+     African-American    FPR = 0.50  (n=6)
+     Caucasian           FPR = 0.00  (n=1)
+    -                    FPR = 0.20  (n=5)
+    ?                    FPR = 0.00  (n=3)
+    AFRICAN-AMERICAN     FPR = 0.25  (n=4)
+    African American     FPR = 0.33  (n=3)
+    African-American     FPR = 0.44  (n=303)
+    Asian                FPR = 0.00  (n=3)
+    CAUCASIAN            FPR = 0.25  (n=4)
+    Caucasian            FPR = 0.25  (n=232)
+    Hispanic             FPR = 0.15  (n=61)
+    Native American      FPR = 0.50  (n=2)
+    Other                FPR = 0.20  (n=41)
+    african-american     FPR = 0.50  (n=10)
+    caucasian            FPR = 0.00  (n=3)
+    hispanic             FPR = 0.33  (n=3)
+
+Full results saved to results\run_20260916_091409.txt
+
+Full results saved to results\run_20260916_092131.txt
+(ETAI) PS C:\Users\marin\ETAI-Pipeline> python main.py
+Train accuracy: 0.705
+Test accuracy:  0.653
+Gap (train - test): +0.052
+
+Classification report (test set):
+              precision    recall  f1-score   support
+
+           0       0.69      0.68      0.68       684
+           1       0.62      0.63      0.62       568
+
+    accuracy                           0.65      1252
+   macro avg       0.65      0.65      0.65      1252
+weighted avg       0.65      0.65      0.65      1252
+
+False positive rate by race
+(share of people who did NOT reoffend, but were predicted to)
+
+  Our model:
+     African-American    FPR = 0.50  (n=6)
+     Caucasian           FPR = 1.00  (n=1)
+    -                    FPR = 0.40  (n=5)
+    ?                    FPR = 0.67  (n=3)
+    AFRICAN-AMERICAN     FPR = 0.00  (n=4)
+    African American     FPR = 0.33  (n=3)
+    African-American     FPR = 0.39  (n=303)
+    Asian                FPR = 0.67  (n=3)
+    CAUCASIAN            FPR = 0.25  (n=4)
+    Caucasian            FPR = 0.29  (n=232)
+    Hispanic             FPR = 0.18  (n=61)
+    Native American      FPR = 0.00  (n=2)
+    Other                FPR = 0.22  (n=41)
+    african-american     FPR = 0.20  (n=10)
+    caucasian            FPR = 0.33  (n=3)
+    hispanic             FPR = 0.33  (n=3)
+
+  COMPAS's own score:
+     African-American    FPR = 0.50  (n=6)
+     Caucasian           FPR = 0.00  (n=1)
+    -                    FPR = 0.20  (n=5)
+    ?                    FPR = 0.00  (n=3)
+    AFRICAN-AMERICAN     FPR = 0.25  (n=4)
+    African American     FPR = 0.33  (n=3)
+    African-American     FPR = 0.44  (n=303)
+    Asian                FPR = 0.00  (n=3)
+    CAUCASIAN            FPR = 0.25  (n=4)
+    Caucasian            FPR = 0.25  (n=232)
+    Hispanic             FPR = 0.15  (n=61)
+    Native American      FPR = 0.50  (n=2)
+    Other                FPR = 0.20  (n=41)
+    african-american     FPR = 0.50  (n=10)
+    caucasian            FPR = 0.00  (n=3)
+    hispanic             FPR = 0.33  (n=3)
+
+Full results saved to results\run_20260916_092155.txt
