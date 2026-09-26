@@ -1,6 +1,7 @@
 # Baseline Predictive Pipeline -- ETAI
 20260674 - Marin Cepeleaga
 
+Week 2
 LR - Train accuracy: 0.679
 Test accuracy:  0.678
 Gap (train - test): +0.001
@@ -13,6 +14,21 @@ Gap (train - test): +0.052
 Evidência de maior diferença entre treino e teste.
 
 Por enquanto o de regressão logistica está melhor porque tem um gap menor e um test acc maior.
+
+Week3
+
+LR - Train accuracy: 0.676
+Test accuracy: 0.673
+Gap (train - test): +0.003
+Train and test accuracy are still very close, suggesting stable generalization. Compared with Week 1, test accuracy is slightly lower (0.673 vs. 0.678), and the gap is slightly larger (0.003 vs. 0.001).
+
+DT - Train accuracy: 0.736
+Test accuracy: 0.647
+Gap (train - test): +0.088
+Training accuracy increased compared with Week 1, but test accuracy decreased (0.647 vs. 0.653) and the gap grew (0.088 vs. 0.052). This suggests the decision tree is fitting the training data more closely without improving its performance on unseen data.
+
+Overall, the logistic regression still generalizes more consistently and has higher test accuracy than the decision tree. The Week 3 results also show lower false-positive rates than COMPAS for several larger race groups, though the very small group counts make some comparisons unreliable.
+
 
 The task: predict two-year recidivism using ProPublica's COMPAS
 dataset -- the data behind a real 2016 investigation into a risk-

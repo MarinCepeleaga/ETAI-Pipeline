@@ -14,6 +14,60 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 
+def _normalize_placeholders(df: pd.DataFrame, tokens: list) -> pd.DataFrame:
+    placeholders = {str(token).strip().casefold() for token in tokens}
+    df = df.copy()
+    for column in df.select_dtypes(include="object").columns:
+        df[column] = df[column].map(lambda value: value.strip() if isinstance(value, str) else value)
+        missing = df[column].map(
+            lambda value: isinstance(value, str) and value.casefold() in placeholders
+        )
+        df.loc[missing, column] = pd.NA
+    return df
+
+
+def _clean_numeric_columns(df: pd.DataFrame, columns: set, rules: dict) -> pd.DataFrame:
+    for column in columns:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+
+    valid_rows = pd.Series(True, index=df.index)
+    for column, limits in rules.items():
+        if column in df.columns:
+            valid_rows &= df[column].between(
+                limits.get("min", -float("inf")),
+                limits.get("max", float("inf")),
+            )
+    return df.loc[valid_rows]
+
+
+def _normalize_categories(df: pd.DataFrame, category_rules: dict) -> pd.DataFrame:
+    for column, categories in category_rules.items():
+        if column in df.columns:
+            canonical = {str(key).strip().casefold(): value for key, value in categories.items()}
+            df[column] = df[column].map(
+                lambda value: canonical.get(value.casefold(), value)
+                if isinstance(value, str)
+                else value
+            )
+    return df
+
+
+def clean_data(df: pd.DataFrame, diagnostics: dict) -> pd.DataFrame:
+    """Clean the dataset using the rules in the ``diagnostics`` config block."""
+    df = _normalize_placeholders(df, diagnostics.get("placeholder_tokens", []))
+
+    validity_rules = diagnostics.get("validity_rules", {})
+    numeric_columns = set(diagnostics.get("numeric_text_columns", [])) | set(validity_rules)
+    df = _clean_numeric_columns(df, numeric_columns, validity_rules)
+    df = _normalize_categories(df, diagnostics.get("canonical_categories", {}))
+
+    columns_to_drop = [diagnostics.get("id_column"), *diagnostics.get("redundant_columns", [])]
+    df = df.drop(columns=columns_to_drop, errors="ignore")
+
+    out = df.dropna().reset_index(drop=True)
+    return out
+
 def preprocess(
     df: pd.DataFrame,
     target: str,
