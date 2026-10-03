@@ -29,6 +29,35 @@ Training accuracy increased compared with Week 1, but test accuracy decreased (0
 
 Overall, the logistic regression still generalizes more consistently and has higher test accuracy than the decision tree. The Week 3 results also show lower false-positive rates than COMPAS for several larger race groups, though the very small group counts make some comparisons unreliable.
 
+Week4
+
+LR baseline
+
+LR - Train accuracy: 0.676
+Test accuracy:  0.658
+Gap (train - test): +0.018
+The logistic regression is the most stable model and performs best overall on unseen data.
+
+DT baseline
+
+DT - Train accuracy: 0.684
+Test accuracy:  0.665
+Gap (train - test): +0.020
+The decision tree is slightly better than the dummy model, but it is less stable than logistic regression.
+
+RF baseline
+
+RF - Train accuracy: 0.690
+Test accuracy:  0.669
+Gap (train - test): +0.021
+The random forest is close to logistic regression, but it still shows a slightly larger gap and does not improve generalization meaningfully.
+
+Dummy baseline
+
+Dummy - Train accuracy: 0.549
+Test accuracy:  0.550
+Gap (train - test): -0.000
+The dummy model performs at the majority-class baseline and has no real learning signal.
 
 The task: predict two-year recidivism using ProPublica's COMPAS
 dataset -- the data behind a real 2016 investigation into a risk-
@@ -47,7 +76,7 @@ go on.
 ├── requirements.txt
 ├── src/
 │   ├── data.py             # loading
-│   ├── preprocessing.py    # cleaning + train/test split
+│   ├── preprocessing.py    # row-preserving cleaning + leak-safe preprocessing
 │   ├── model.py             # model construction
 │   ├── evaluate.py         # accuracy metrics + fairness check
 │   └── results.py          # saves each run's report to disk
@@ -64,6 +93,8 @@ This table is updated after each practical class, so you can always see what cha
 | Week | Practical class focus | Added to the pipeline |
 |------|------------------------|------------------------|
 | 2 | Introduction & baseline pipeline | Initial version: project structure, a single naive train/test split (no cross-validation), minimal preprocessing (drop rows with missing values, one-hot encode categoricals), logistic regression baseline, a first (deliberately simple) fairness check comparing our model's and COMPAS's own false-positive rate by race, train-vs-test accuracy reporting (to start spotting overfitting), and each run's full report saved automatically to `results/` |
+| 2 | Introduction & baseline pipeline | Initial version: project structure, naive train/test split, minimal preprocessing, logistic-regression baseline, a first fairness check, train-vs-test accuracy reporting, and timestamped run reports. |
+| 4 | Leak-safe preprocessing | Row-preserving cleaning; duplicate removal on labelled training data only; an MNAR indicator for configured columns; configured median/mode imputation, categorical encoding and numeric scaling inside the model Pipeline; stratified development/locked-test split; `dummy` and `random_forest` model options. |
 
 ## Environment setup
 
@@ -123,8 +154,8 @@ folder, on any OS:
 python main.py
 ```
 
-This loads `config.yaml`, loads and preprocesses the data, trains the model, and prints:
-- **train accuracy and test accuracy, side by side.** Comparing the two is how you catch overfitting: if the model looks much better on the data it was trained on than on data it's never seen, it has memorised rather than learned something that generalises. 
+This loads `config.yaml`, cleans the data without dropping rows, removes duplicate records from the labelled training data, creates a stratified development/locked-test split, and fits preprocessing and the model together. It prints:
+- **development training accuracy and locked-test accuracy, side by side.** The test split is held out from preprocessing fits and model training.
 - a classification report on the test set
 - a false-positive-rate-by-race comparison between our model and
   COMPAS's own score

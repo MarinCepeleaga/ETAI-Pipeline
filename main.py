@@ -9,9 +9,16 @@ This orchestrates the full (deliberately simple) pipeline:
     -> evaluate (train & test) -> save results
 """
 import yaml
+from sklearn.pipeline import Pipeline
 
 from src.data import load_data
-from src.preprocessing import clean_data, preprocess
+from src.preprocessing import (
+    build_preprocessor,
+    clean_dataset,
+    drop_duplicate_rows,
+    split_dev_test,
+    split_features_target,
+)
 from src.model import build_model
 from src.evaluate import evaluate, fairness_report
 from src.results import save_run
@@ -26,18 +33,27 @@ def main():
     config = load_config()
 
     df_raw = load_data(config["data"]["path"])
-    df_clean = clean_data(df_raw, config["diagnostics"])
+    df_clean = clean_dataset(df_raw, config["diagnostics"])
+    df_train = drop_duplicate_rows(df_clean, config["diagnostics"].get("id_column"))
 
-    X_train, X_test, y_train, y_test, extras_test = preprocess(
-        df_clean,
-        target=config["data"]["target"],
-        sensitive_attr=config["data"]["sensitive_attr"],
-        drop_columns=config["data"]["drop_columns"],
-        test_size=config["split"]["test_size"],
-        random_state=config["split"]["random_state"],
+    preprocessing_config = config["preprocessing"]
+    X, y, extras = split_features_target(
+        df_train,
+        config["data"],
+        preprocessing_config.get("mnar_indicator_sources", []),
+    )
+    X_train, X_test, y_train, y_test, _, extras_test = split_dev_test(
+        X,
+        y,
+        extras,
+        test_size=config["test_set"]["size"],
+        random_state=config["test_set"]["random_state"],
     )
 
-    model = build_model(config["model"])
+    model = Pipeline([
+        ("prep", build_preprocessor(preprocessing_config)),
+        ("model", build_model(config["model"])),
+    ])
     model.fit(X_train, y_train)
 
     # predict on both splits -- train accuracy vs. test accuracy is how we'll spot overfitting, not just how "good" the model looks
