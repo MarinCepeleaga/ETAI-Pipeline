@@ -7,6 +7,9 @@ data:
   sensitive_attr: "race"          # excluded from model features, used only to audit fairness
   drop_columns: ["id", "decile_score", "score_text"]  # identifiers / COMPAS's own score, not our model's inputs
 
+feature_engineering:
+  enabled: true                  # set false for nested-CV comparisons without engineered features
+
 diagnostics:
   id_column: "id"
   candidate_predictors: ["sex", "race", "age_cat", "c_charge_degree", "score_text"]
@@ -46,7 +49,7 @@ test_set:
   random_state: 42
 
 preprocessing:
-  numeric_features: [age, juv_fel_count, juv_misd_count, juv_other_count, priors_count]
+  numeric_features: [age, juv_fel_count, juv_misd_count, juv_other_count, priors_count, priors_per_adult_year, juvenile_offense_total, age_priors_interaction]
   categorical_features: [sex, age_cat, c_charge_degree]
   mnar_indicator_sources: [priors_count, c_charge_degree]
   imputation:
@@ -57,9 +60,45 @@ preprocessing:
   random_state: 42
 
 model:
-  type: "random_forest"   # or "decision_tree"
+  type: "adaboost"   # dummy | logistic_regression | decision_tree | random_forest | oblique_random_forest | adaboost
   params:
     n_estimators: 100
-    max_depth: 5
+    max_depth: 1
+  # Example settings for the other supported models:
+  # logistic_regression: {max_iter: 2000, random_state: 42}
+  # decision_tree: {random_state: 42}
+  # oblique_random_forest: {n_estimators: 200, n_components: 10, random_state: 42, n_jobs: -1}
+  # adaboost: {max_depth: 1, n_estimators: 200, learning_rate: 1.0, random_state: 42}
+
+tuning:
+  enabled: true
+  n_trials: 30
+  n_splits: 5
+  random_state: 42
+  scoring: accuracy
+  n_jobs: 1
+  search_spaces:
+    dummy:
+      model__strategy: {type: categorical, choices: ["most_frequent", "prior", "stratified", "uniform"]}
+    decision_tree:
+      model__max_depth: {type: int, low: 1, high: 20}
+      model__min_samples_leaf: {type: int, low: 1, high: 200, log: true}
+      model__criterion: {type: categorical, choices: ["gini", "entropy"]}
+    logistic_regression:
+      model__C: {type: float, low: 0.001, high: 100.0, log: true}
+    random_forest:
+      model__n_estimators: {type: int, low: 100, high: 300}
+      model__max_depth: {type: int, low: 3, high: 20}
+      model__min_samples_leaf: {type: int, low: 1, high: 100, log: true}
+    oblique_random_forest:
+      model__n_estimators: {type: int, low: 100, high: 300}
+      model__estimator__tree__max_depth: {type: int, low: 2, high: 20}
+      model__estimator__tree__min_samples_leaf: {type: int, low: 1, high: 100, log: true}
+      model__estimator__project__n_components: {type: int, low: 5, high: 20}
+    adaboost:
+      model__n_estimators: {type: int, low: 50, high: 300}
+      model__learning_rate: {type: float, low: 0.01, high: 1.0, log: true}
+      model__estimator__max_depth: {type: int, low: 1, high: 3}
+
 output:
   results_dir: "results"   # each run's full report is saved here as a timestamped .txt file

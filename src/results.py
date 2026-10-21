@@ -17,12 +17,20 @@ def save_run(results_dir: str, config: dict, report_text: str) -> str:
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = os.path.join(results_dir, f"run_{timestamp}.txt")
+    tuning_config = config.get("tuning", {})
 
     header = (
         f"Run: {timestamp}\n"
         f"Model: {config['model']['type']}  params={config['model']['params']}\n"
         f"Test size: {config['test_set']['size']}  "
         f"random_state: {config['test_set']['random_state']}\n"
+        f"Feature engineering enabled: "
+        f"{config.get('feature_engineering', {}).get('enabled', True)}\n"
+        f"Tuning: enabled={tuning_config.get('enabled', False)}, "
+        f"trials={tuning_config.get('n_trials', 'n/a')}, "
+        f"folds={tuning_config.get('n_splits', 'n/a')}, "
+        f"metric={tuning_config.get('scoring', 'accuracy')}, "
+        f"seed={tuning_config.get('random_state', 'n/a')}\n"
         + "=" * 60 + "\n\n"
     )
 

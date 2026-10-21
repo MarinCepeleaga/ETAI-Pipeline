@@ -1,14 +1,7 @@
-"""
-Preprocessing -- deliberately minimal for week 2.
+"""Row-preserving cleaning and leak-safe, configuration-driven preprocessing.
 
-This is intentionally the weakest part of the pipeline:
-    - missing values are simply dropped (no imputation strategy)
-    - categorical columns are one-hot encoded with no thought given to unseen categories or cardinality
-    - a single train/test split is used (no cross-validation)
-
-You will replace this with something better in the coming weeks.
-
-One thing that is NOT naive, on purpose: `sensitive_attr` (race) is kept out of the model's input features entirely. It's split alongside the data so it's still available afterwards -- not to train on, but to check whether the model treats different groups differently. See src/evaluate.py:fairness_report.
+The sensitive attribute stays out of model inputs and is retained only for
+the fairness reports.
 """
 import numpy as np
 import pandas as pd
@@ -24,6 +17,12 @@ from sklearn.preprocessing import (
     RobustScaler,
     StandardScaler,
     TargetEncoder,
+)
+
+ENGINEERED_FEATURE_COLUMNS = (
+    "priors_per_adult_year",
+    "juvenile_offense_total",
+    "age_priors_interaction",
 )
 
 
@@ -98,6 +97,30 @@ def add_missingness_indicators(df: pd.DataFrame, mnar_indicator_sources: list) -
     for col in mnar_indicator_sources:
         if col in out.columns:
             out[f"{col}_was_missing"] = out[col].isna().astype(int)
+    return out
+
+
+def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add fixed-formula features that do not learn statistics from the data."""
+    required_columns = {
+        "age",
+        "priors_count",
+        "juv_fel_count",
+        "juv_misd_count",
+        "juv_other_count",
+    }
+    missing_columns = required_columns.difference(df.columns)
+    if missing_columns:
+        raise ValueError(
+            f"Cannot create engineered features; missing columns: {sorted(missing_columns)}"
+        )
+
+    out = df.copy()
+    out["priors_per_adult_year"] = out["priors_count"] / (out["age"] - 17).clip(lower=1)
+    out["juvenile_offense_total"] = out[
+        ["juv_fel_count", "juv_misd_count", "juv_other_count"]
+    ].sum(axis=1, min_count=3)
+    out["age_priors_interaction"] = out["age"] * out["priors_count"]
     return out
 
 

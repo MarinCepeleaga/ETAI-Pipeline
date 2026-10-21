@@ -1,12 +1,10 @@
-"""Evaluation -- single train/test split, no cross-validation (yet)."""
+"""Evaluation reports for held-out and out-of-fold model predictions."""
 import pandas as pd
 from sklearn.metrics import accuracy_score, classification_report
 
 
 def evaluate(y_train, y_train_pred, y_test, y_pred) -> str:
-    """
-    Prints -- and returns as text, so it can also be saved to disk -- train accuracy and test accuracy side by side, plus the usual classification report on the test set.
-    """
+    """Return train/test accuracy and the test-set classification report."""
     train_accuracy = accuracy_score(y_train, y_train_pred)
     test_accuracy = accuracy_score(y_test, y_pred)
     gap = train_accuracy - test_accuracy
@@ -18,14 +16,25 @@ def evaluate(y_train, y_train_pred, y_test, y_pred) -> str:
     ]
     lines.append("")
     lines.append("Classification report (test set):")
-    lines.append(classification_report(y_test, y_pred))
+    lines.append(classification_report(y_test, y_pred, zero_division=0))
 
-    text = "\n".join(lines)
-    print(text)
+    return "\n".join(lines)
+
+
+def oof_classification_report(y_true, y_pred) -> str:
+    """Format classification metrics for development-set out-of-fold predictions."""
+    text = "Classification report (development-set out-of-fold predictions):\n"
+    text += classification_report(y_true, y_pred, zero_division=0)
     return text
 
 
-def fairness_report(y_test, y_pred, extras_test: pd.DataFrame, sensitive_attr: str = "race") -> str:
+def fairness_report(
+    y_test,
+    y_pred,
+    extras_test: pd.DataFrame,
+    sensitive_attr: str = "race",
+    split_label: str = "test set",
+) -> str:
     """
     Deliberately simple fairness check -- not a substitute for a real audit, just enough to show that "accuracy" and "fair" are not the same thing.
 
@@ -41,7 +50,7 @@ def fairness_report(y_test, y_pred, extras_test: pd.DataFrame, sensitive_attr: s
     df["y_pred_compas"] = (df["score_text"] != "Low").astype(int)
 
     lines = [
-        "False positive rate by race",
+        f"False positive rate by race ({split_label})",
         "(share of people who did NOT reoffend, but were predicted to)",
         "",
     ]
@@ -56,6 +65,4 @@ def fairness_report(y_test, y_pred, extras_test: pd.DataFrame, sensitive_attr: s
             lines.append(f"    {group:<20s} FPR = {fpr:.2f}  (n={len(negatives)})")
         lines.append("")
 
-    text = "\n".join(lines)
-    print(text)
-    return text
+    return "\n".join(lines)

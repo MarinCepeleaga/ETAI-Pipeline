@@ -59,6 +59,35 @@ Test accuracy:  0.550
 Gap (train - test): -0.000
 The dummy model performs at the majority-class baseline and has no real learning signal.
 
+Week 5/6
+
+LR - Train accuracy: 0.676
+Test accuracy:  0.661
+Gap (train - test): +0.015
+The logistic regression remains the most stable model, with a low train-test gap and strong generalization on unseen data.
+
+DT - Train accuracy: 0.687
+Test accuracy:  0.670
+Gap (train - test): +0.018
+The decision tree improves over the baseline and reaches a stronger test accuracy, but it is still less stable than logistic regression.
+
+RF - Train accuracy: 0.689
+Test accuracy:  0.673
+Gap (train - test): +0.016
+The random forest gives the best standard ensemble performance, with a slightly higher test accuracy than logistic regression while staying reasonably stable.
+
+Oblique RF - Train accuracy: 0.695
+Test accuracy:  0.674
+Gap (train - test): +0.021
+The oblique random forest reaches the strongest test accuracy overall, though its gap is a bit larger than the other models.
+
+AdaBoost - Train accuracy: 0.682
+Test accuracy:  0.672
+Gap (train - test): +0.010
+The AdaBoost model is very stable and competitive, with one of the lowest overfitting gaps while keeping test performance close to the best models.
+
+Across the tuned models, the false-positive rates for the larger race groups are consistently lower than COMPAS, while the ensemble approaches offer the highest predictive accuracy without a large drop in fairness.
+
 The task: predict two-year recidivism using ProPublica's COMPAS
 dataset -- the data behind a real 2016 investigation into a risk-
 assessment algorithm actually used by US courts to help inform bail and sentencing decisions. See `data/README.md` for the full problem description and a complete data dictionary before you start.
@@ -77,7 +106,8 @@ go on.
 ├── src/
 │   ├── data.py             # loading
 │   ├── preprocessing.py    # row-preserving cleaning + leak-safe preprocessing
-│   ├── model.py             # model construction
+│   ├── model.py             # model construction and complete preprocessing/model Pipeline
+│   ├── tuning.py            # cross-validation, Optuna tuning, and nested CV
 │   ├── evaluate.py         # accuracy metrics + fairness check
 │   └── results.py          # saves each run's report to disk
 ├── results/                # created automatically -- one file per run (not tracked in git)
@@ -95,6 +125,8 @@ This table is updated after each practical class, so you can always see what cha
 | 2 | Introduction & baseline pipeline | Initial version: project structure, a single naive train/test split (no cross-validation), minimal preprocessing (drop rows with missing values, one-hot encode categoricals), logistic regression baseline, a first (deliberately simple) fairness check comparing our model's and COMPAS's own false-positive rate by race, train-vs-test accuracy reporting (to start spotting overfitting), and each run's full report saved automatically to `results/` |
 | 2 | Introduction & baseline pipeline | Initial version: project structure, naive train/test split, minimal preprocessing, logistic-regression baseline, a first fairness check, train-vs-test accuracy reporting, and timestamped run reports. |
 | 4 | Leak-safe preprocessing | Row-preserving cleaning; duplicate removal on labelled training data only; an MNAR indicator for configured columns; configured median/mode imputation, categorical encoding and numeric scaling inside the model Pipeline; stratified development/locked-test split; `dummy` and `random_forest` model options. |
+| 5 | Hyperparameter tuning | Stratified CV of the complete pipeline; Optuna search on development data; nested CV for an honest tuned-model estimate; final refit after tuning; out-of-fold classification and fairness reports. |
+| 6 | Ensembles and feature engineering | AdaBoost and oblique random-forest model options; fixed-formula features with a configuration switch for comparisons; per-model search spaces support nested tuning. |
 
 ## Environment setup
 
@@ -155,12 +187,16 @@ python main.py
 ```
 
 This loads `config.yaml`, cleans the data without dropping rows, removes duplicate records from the labelled training data, creates a stratified development/locked-test split, and fits preprocessing and the model together. It prints:
+- default-hyperparameter cross-validation results for the full pipeline
+- nested-CV results and the Optuna tuning report when `tuning.enabled` is true
+- out-of-fold classification and fairness reports on the development split
 - **development training accuracy and locked-test accuracy, side by side.** The test split is held out from preprocessing fits and model training.
 - a classification report on the test set
 - a false-positive-rate-by-race comparison between our model and
   COMPAS's own score
 
 All of this is also saved to a timestamped file in `results/` (e.g.`results/run_20260916_143012.txt`), so it doesn't just scroll past in your terminal -- open it later, or change something in `config.yaml` (like the model type) and compare the new file to the last one.
+To choose a model, set `model.type` and its `params` in `config.yaml`. Set `feature_engineering.enabled` to `false` to run the same CV comparisons without engineered features. Use a smaller `tuning.n_trials` while checking setup; restore the intended trial count for final experiments.
 `results/` is created automatically the first time you run the
 pipeline, and isn't tracked in git (see `.gitignore`) since it's
 generated output, not source.
