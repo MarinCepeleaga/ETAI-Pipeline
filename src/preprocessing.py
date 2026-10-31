@@ -8,7 +8,7 @@ import pandas as pd
 from category_encoders import CountEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import (
     MinMaxScaler,
@@ -156,14 +156,14 @@ _SCALERS = {
 }
 
 _ENCODERS = {
-    "onehot": lambda seed: OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-    "ordinal": lambda seed: OrdinalEncoder(
+    "onehot": lambda: OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+    "ordinal": lambda: OrdinalEncoder(
         handle_unknown="use_encoded_value", unknown_value=-1
     ),
-    "count": lambda seed: CountEncoder(handle_unknown=0, handle_missing=0),
-    "target": lambda seed: TargetEncoder(
+    "count": lambda: CountEncoder(handle_unknown=0, handle_missing=0),
+    "target": lambda: TargetEncoder(
         target_type="binary",
-        cv=StratifiedKFold(5, shuffle=True, random_state=seed),
+        cv=5,
     ),
 }
 
@@ -179,7 +179,7 @@ def build_preprocessor(preprocessing_config: dict) -> ColumnTransformer:
 
     scaler_factory = _SCALERS[scaler_name]
     scaler = scaler_factory() if callable(scaler_factory) else scaler_factory
-    encoder = _ENCODERS[encoder_name](preprocessing_config.get("random_state"))
+    encoder = _ENCODERS[encoder_name]()
 
     numeric_pipeline = Pipeline([
         ("impute", SimpleImputer(strategy=imputation.get("numeric_strategy", "median"))),

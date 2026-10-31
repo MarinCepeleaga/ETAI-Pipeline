@@ -88,6 +88,59 @@ The AdaBoost model is very stable and competitive, with one of the lowest overfi
 
 Across the tuned models, the false-positive rates for the larger race groups are consistently lower than COMPAS, while the ensemble approaches offer the highest predictive accuracy without a large drop in fairness.
 
+Week 7
+
+Dummy baseline
+
+Dummy - Train accuracy: 0.508
+Test accuracy:  0.521
+Gap (train - test): -0.013
+The dummy model remains close to chance, with a nested-CV ROC-AUC of 0.500, and provides a baseline for judging whether the other models learn useful patterns.
+
+LR
+
+LR - Train accuracy: 0.679
+Test accuracy:  0.661
+Gap (train - test): +0.017
+Logistic regression performs better than the dummy baseline, but has the lowest test accuracy among the trained models.
+
+DT
+
+DT - Train accuracy: 0.673
+Test accuracy:  0.676
+Gap (train - test): -0.003
+The decision tree has a small negative train-test gap, indicating similar performance on the training and test sets, though its test accuracy is lower than the ensemble models.
+
+RF
+
+RF - Train accuracy: 0.685
+Test accuracy:  0.680
+Gap (train - test): +0.005
+The random forest gives the second-highest test accuracy, with only a small train-test gap.
+
+Oblique RF
+
+Oblique RF - Train accuracy: 0.687
+Test accuracy:  0.670
+Gap (train - test): +0.017
+The oblique random forest has a larger train-test gap, but ties for the highest nested-CV ROC-AUC (0.727).
+
+AdaBoost
+
+AdaBoost - Train accuracy: 0.684
+Test accuracy:  0.673
+Gap (train - test): +0.012
+AdaBoost is competitive with the other ensemble models and also ties for the highest nested-CV ROC-AUC (0.727).
+
+Histogram gradient boosting
+
+Hist. gradient boosting - Train accuracy: 0.685
+Test accuracy:  0.681
+Gap (train - test): +0.004
+Histogram gradient boosting reaches the highest test accuracy and maintains a small train-test gap, suggesting stable generalization.
+
+Overall, histogram gradient boosting performs best on the locked test set, while oblique random forest and AdaBoost have the highest nested-CV ROC-AUC. The best model therefore depends on the evaluation metric. At the 0.50 threshold, histogram gradient boosting has lower test-set false-positive rates than COMPAS for the African-American, Caucasian, and Hispanic groups, and the same rate for the Other group. Results for the Asian and Native American groups are based on only 2 and 1 test examples, respectively, and should not be treated as reliable comparisons.
+
 The task: predict two-year recidivism using ProPublica's COMPAS
 dataset -- the data behind a real 2016 investigation into a risk-
 assessment algorithm actually used by US courts to help inform bail and sentencing decisions. See `data/README.md` for the full problem description and a complete data dictionary before you start.
@@ -126,7 +179,8 @@ This table is updated after each practical class, so you can always see what cha
 | 2 | Introduction & baseline pipeline | Initial version: project structure, naive train/test split, minimal preprocessing, logistic-regression baseline, a first fairness check, train-vs-test accuracy reporting, and timestamped run reports. |
 | 4 | Leak-safe preprocessing | Row-preserving cleaning; duplicate removal on labelled training data only; an MNAR indicator for configured columns; configured median/mode imputation, categorical encoding and numeric scaling inside the model Pipeline; stratified development/locked-test split; `dummy` and `random_forest` model options. |
 | 5 | Hyperparameter tuning | Stratified CV of the complete pipeline; Optuna search on development data; nested CV for an honest tuned-model estimate; final refit after tuning; out-of-fold classification and fairness reports. |
-| 6 | Ensembles and feature engineering | AdaBoost and oblique random-forest model options; fixed-formula features with a configuration switch for comparisons; per-model search spaces support nested tuning. |
+| 6 | Ensembles, feature engineering & boosting | AdaBoost, oblique random forest, gradient boosting, histogram gradient boosting, and a Naive Bayes baseline; fixed-formula features with a configuration switch; per-model search spaces support nested tuning. |
+| 7 | Metrics and model comparison | Out-of-fold probabilities; accuracy, balanced accuracy, precision, recall, F1, F-beta, ROC-AUC, and average precision; a configurable selection metric for tuning; probability-thresholded fairness reports and confusion matrices; and a persistent CSV scoreboard with the dummy baseline and each run. |
 
 ## Environment setup
 
@@ -187,19 +241,27 @@ python main.py
 ```
 
 This loads `config.yaml`, cleans the data without dropping rows, removes duplicate records from the labelled training data, creates a stratified development/locked-test split, and fits preprocessing and the model together. It prints:
-- default-hyperparameter cross-validation results for the full pipeline
-- nested-CV results and the Optuna tuning report when `tuning.enabled` is true
-- out-of-fold classification and fairness reports on the development split
+- per-fold and mean/std results for every metric in `cv.metrics`, with
+  `cv.selection_metric` used for tuning and ranking
+- the same-fold dummy baseline and, when `tuning.enabled` is true,
+  nested-CV results and the Optuna tuning report
+- out-of-fold classification, confusion-matrix, and fairness reports on
+  the development split
 - **development training accuracy and locked-test accuracy, side by side.** The test split is held out from preprocessing fits and model training.
 - a classification report on the test set
 - a false-positive-rate-by-race comparison between our model and
   COMPAS's own score
 
-All of this is also saved to a timestamped file in `results/` (e.g.`results/run_20260916_143012.txt`), so it doesn't just scroll past in your terminal -- open it later, or change something in `config.yaml` (like the model type) and compare the new file to the last one.
-To choose a model, set `model.type` and its `params` in `config.yaml`. Set `feature_engineering.enabled` to `false` to run the same CV comparisons without engineered features. Use a smaller `tuning.n_trials` while checking setup; restore the intended trial count for final experiments.
-`results/` is created automatically the first time you run the
-pipeline, and isn't tracked in git (see `.gitignore`) since it's
-generated output, not source.
+The full report is also saved to a timestamped file in `results/`.
+Every run is appended to `results/runs.csv`; the terminal and report
+show comparable runs ranked by the configured selection metric. To
+choose a model, set `model.type` and its `params` in `config.yaml`.
+Set `feature_engineering.enabled` to `false` to run the same CV
+comparisons without engineered features. Use a smaller
+`tuning.n_trials` while checking setup; restore the intended trial
+count for final experiments.
+`results/` is created automatically and isn't tracked in git (see
+`.gitignore`) since it contains generated output, not source.
 
 You're free to improve on this structure or restructure it entirely -- what matters is that your project stays runnable end-to-end with a single command, and that each piece (data, preprocessing, model, evaluation) stays easy to find and change independently.
 
