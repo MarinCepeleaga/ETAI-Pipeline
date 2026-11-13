@@ -141,6 +141,10 @@ Histogram gradient boosting reaches the highest test accuracy and maintains a sm
 
 Overall, histogram gradient boosting performs best on the locked test set, while oblique random forest and AdaBoost have the highest nested-CV ROC-AUC. The best model therefore depends on the evaluation metric. At the 0.50 threshold, histogram gradient boosting has lower test-set false-positive rates than COMPAS for the African-American, Caucasian, and Hispanic groups, and the same rate for the Other group. Results for the Asian and Native American groups are based on only 2 and 1 test examples, respectively, and should not be treated as reliable comparisons.
 
+Week8
+
+The tuned XGBoost model achieved nested-CV ROC-AUC of 0.726 ± 0.011 with feature selection and 0.727 ± 0.013 without it; both runs had locked-test accuracy of 0.674. Using the five displayed fold scores and a test/train ratio of 1/4, the corrected paired test gives a mean ROC-AUC difference (selection minus no selection) of -0.001 (`t = -0.58`, `p ≈ 0.59`), so the small score difference is not statistically significant. Feature selection kept just age, priors_count, and priors_per_adult_year, compared with all 13 preprocessed features in the run without selection. Because the compact model performs essentially as well, I would keep selection enabled for simplicity, while noting that these five folds do not show a measurable performance gain.
+
 The task: predict two-year recidivism using ProPublica's COMPAS
 dataset -- the data behind a real 2016 investigation into a risk-
 assessment algorithm actually used by US courts to help inform bail and sentencing decisions. See `data/README.md` for the full problem description and a complete data dictionary before you start.
@@ -181,6 +185,7 @@ This table is updated after each practical class, so you can always see what cha
 | 5 | Hyperparameter tuning | Stratified CV of the complete pipeline; Optuna search on development data; nested CV for an honest tuned-model estimate; final refit after tuning; out-of-fold classification and fairness reports. |
 | 6 | Ensembles, feature engineering & boosting | AdaBoost, oblique random forest, gradient boosting, histogram gradient boosting, and a Naive Bayes baseline; fixed-formula features with a configuration switch; per-model search spaces support nested tuning. |
 | 7 | Metrics and model comparison | Out-of-fold probabilities; accuracy, balanced accuracy, precision, recall, F1, F-beta, ROC-AUC, and average precision; a configurable selection metric for tuning; probability-thresholded fairness reports and confusion matrices; and a persistent CSV scoreboard with the dummy baseline and each run. |
+| 8 | XGBoost & feature selection | XGBoost support and tuning; leak-safe configurable feature selectors (`vote`, `kbest`, `from_model`) inside the model pipeline; nested tuning of the vote threshold; per-run pipeline caching; and selected-feature reporting. |
 
 ## Environment setup
 
@@ -251,11 +256,16 @@ This loads `config.yaml`, cleans the data without dropping rows, removes duplica
 - a classification report on the test set
 - a false-positive-rate-by-race comparison between our model and
   COMPAS's own score
+- the features retained by the configured selector
 
 The full report is also saved to a timestamped file in `results/`.
 Every run is appended to `results/runs.csv`; the terminal and report
 show comparable runs ranked by the configured selection metric. To
 choose a model, set `model.type` and its `params` in `config.yaml`.
+Feature selection is configured under `feature_selection`; it is enabled by
+default with the combined vote selector and can be switched to `kbest` or
+`from_model`. XGBoost is the default model and requires the `xgboost` dependency
+listed in `requirements.txt`.
 Set `feature_engineering.enabled` to `false` to run the same CV
 comparisons without engineered features. Use a smaller
 `tuning.n_trials` while checking setup; restore the intended trial
@@ -264,6 +274,25 @@ count for final experiments.
 `.gitignore`) since it contains generated output, not source.
 
 You're free to improve on this structure or restructure it entirely -- what matters is that your project stays runnable end-to-end with a single command, and that each piece (data, preprocessing, model, evaluation) stays easy to find and change independently.
+
+## Model evaluation
+
+To compare two runs on the same development-set folds, pass their
+`fold_1` ... `fold_5` values for the same metric to
+`src.evaluate.corrected_paired_test`. For the default five-fold CV, use
+`test_train_ratio=1/4`. This applies the Nadeau-Bengio correction for the
+overlap between training folds; use matched data, folds, and metrics.
+
+```python
+from src.evaluate import corrected_paired_test
+
+result = corrected_paired_test(
+    selected_run[["fold_1", "fold_2", "fold_3", "fold_4", "fold_5"]],
+    baseline_run[["fold_1", "fold_2", "fold_3", "fold_4", "fold_5"]],
+    test_train_ratio=1 / 4,
+)
+print(result)
+```
 
 ## Dataset
 

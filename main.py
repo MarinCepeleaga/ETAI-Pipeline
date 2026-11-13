@@ -9,6 +9,7 @@ This orchestrates the full (deliberately simple) pipeline:
     -> cross-validate/tune -> evaluate -> save results
 """
 from datetime import datetime
+import tempfile
 
 import yaml
 from sklearn.model_selection import StratifiedKFold
@@ -47,6 +48,11 @@ def load_config(path: str = "config.yaml") -> dict:
 
 def main():
     config = load_config()
+    with tempfile.TemporaryDirectory(prefix="pipeline_cache_") as cache_dir:
+        _run_pipeline(config, cache_dir)
+
+
+def _run_pipeline(config: dict, cache_dir: str):
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     df_raw = load_data(config["data"]["path"])
@@ -108,10 +114,20 @@ def main():
     )
     inner_splits = tuning_config.get("n_splits", n_splits)
     inner_cv = StratifiedKFold(n_splits=inner_splits, shuffle=True, random_state=tuning_seed)
-    pipeline = build_pipeline(preprocessing_config, config["model"])
+    feature_selection_config = config.get("feature_selection", {})
+    feature_selection_enabled = feature_selection_config.get("enabled", False)
+    feature_selection_method = feature_selection_config.get("method", "vote")
+    pipeline = build_pipeline(
+        preprocessing_config,
+        config["model"],
+        feature_selection_config,
+        memory=cache_dir,
+    )
     report_sections = []
 
-    floor_pipeline = build_pipeline(preprocessing_config, {"type": "dummy"})
+    floor_pipeline = build_pipeline(
+        preprocessing_config, {"type": "dummy"}, memory=cache_dir
+    )
     floor_scores, _ = cross_validate_pipeline(
         floor_pipeline,
         X_train,
@@ -150,7 +166,16 @@ def main():
                 f"Tuning is enabled, but no search space is configured for "
                 f"model type {model_type!r}."
             )
-        search_space = search_spaces[model_type]
+        search_space = dict(search_spaces[model_type])
+        if feature_selection_enabled and feature_selection_method == "vote":
+            selection_search_space = feature_selection_config.get("search_space", {})
+            overlapping_parameters = search_space.keys() & selection_search_space.keys()
+            if overlapping_parameters:
+                raise ValueError(
+                    "Model and feature-selection search spaces define the same "
+                    f"parameters: {sorted(overlapping_parameters)}"
+                )
+            search_space.update(selection_search_space)
         n_trials = tuning_config.get("n_trials", 30)
 
         nested_scores, y_oof = nested_cross_validate(
@@ -213,6 +238,12 @@ def main():
 
     model.fit(X_train, y_train)
 
+    feature_names = model.named_steps["prep"].get_feature_names_out()
+    if "select" in model.named_steps:
+        feature_names = feature_names[model.named_steps["select"].get_support()]
+    features_kept = [str(name) for name in feature_names]
+    report_sections.append("Features kept: " + ", ".join(features_kept))
+
     y_train_pred = model.predict(X_train)
     y_test_pred = model.predict(X_test)
     report = evaluate(y_train, y_train_pred, y_test, y_test_pred)
@@ -235,6 +266,7 @@ def main():
         "tuned": tuning_enabled,
         "encoder": preprocessing_config["encoder"],
         "scaler": preprocessing_config["scaler"],
+        "feature_selection": str(feature_selection_config),
         "params": str(config["model"].get("params", {})),
         "tuned_params": str(study.best_params) if tuning_enabled else "",
         "metric": selection_metric,
@@ -262,6 +294,7 @@ def main():
                 "tuned",
                 "encoder",
                 "scaler",
+                "feature_selection",
                 "mean",
                 "std",
                 "untuned",
@@ -277,6 +310,7 @@ def main():
     results_dir = config.get("output", {}).get("results_dir", "results")
     path = save_run(results_dir, config, report, run_id=run_id)
     print(f"Full results saved to {path}")
+    print("Features kept: " + ", ".join(features_kept))
 
 
 if __name__ == "__main__":

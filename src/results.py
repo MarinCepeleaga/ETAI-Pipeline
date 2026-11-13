@@ -51,6 +51,7 @@ def save_run(
         f"random_state: {config['test_set']['random_state']}\n"
         f"Feature engineering enabled: "
         f"{config.get('feature_engineering', {}).get('enabled', True)}\n"
+        f"Feature selection: {config.get('feature_selection', {'enabled': False})}\n"
         f"CV metrics: {cv_config.get('metrics', 'n/a')}\n"
         f"Selection metric: {selection_metric}\n"
         f"Tuning: enabled={tuning_config.get('enabled', False)}, "

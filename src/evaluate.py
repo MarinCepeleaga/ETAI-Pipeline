@@ -1,6 +1,7 @@
 """Evaluation reports for held-out and out-of-fold model predictions."""
 import numpy as np
 import pandas as pd
+from scipy import stats
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -36,6 +37,40 @@ def build_scorers(metrics: list) -> dict:
         else:
             scorers[name] = get_scorer(name)
     return scorers
+
+
+def corrected_paired_test(scores_a, scores_b, test_train_ratio: float) -> dict:
+    """Compare same-fold scores with the Nadeau-Bengio corrected paired t-test."""
+    scores_a = np.asarray(scores_a, dtype=float)
+    scores_b = np.asarray(scores_b, dtype=float)
+    if scores_a.ndim != 1 or scores_b.ndim != 1:
+        raise ValueError("Both score inputs must be one-dimensional.")
+    if scores_a.shape != scores_b.shape:
+        raise ValueError("Both score inputs must contain the same number of folds.")
+    if len(scores_a) < 2:
+        raise ValueError("At least two paired folds are required.")
+    if not np.isfinite(scores_a).all() or not np.isfinite(scores_b).all():
+        raise ValueError("Fold scores must all be finite.")
+    if not np.isfinite(test_train_ratio) or test_train_ratio < 0:
+        raise ValueError(
+            f"test_train_ratio must be finite and non-negative, got {test_train_ratio}."
+        )
+
+    differences = scores_a - scores_b
+    folds = len(differences)
+    standard_error = np.sqrt(
+        (1 / folds + test_train_ratio) * differences.var(ddof=1)
+    )
+    statistic = (
+        float(differences.mean() / standard_error) if standard_error > 0 else 0.0
+    )
+    p_value = float(2 * stats.t.sf(abs(statistic), df=folds - 1))
+    return {
+        "mean_diff": float(differences.mean()),
+        "wins": f"{int((differences > 0).sum())}/{folds}",
+        "t": statistic,
+        "p_value": p_value,
+    }
 
 
 def _predictions_at_threshold(y_proba, threshold: float) -> np.ndarray:
