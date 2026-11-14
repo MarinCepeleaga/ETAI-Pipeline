@@ -3,14 +3,18 @@ Entry point for the baseline predictive pipeline.
 
 Run with:
     python main.py
+    python main.py config_adult.yaml
 
 This orchestrates the full (deliberately simple) pipeline:
     load config -> load data -> preprocess -> split -> train
     -> cross-validate/tune -> evaluate -> save results
 """
+import argparse
 from datetime import datetime
+import os
 import tempfile
 
+import pandas as pd
 import yaml
 from sklearn.model_selection import StratifiedKFold
 
@@ -46,8 +50,57 @@ def load_config(path: str = "config.yaml") -> dict:
         return yaml.safe_load(f)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run the predictive pipeline.")
+    parser.add_argument(
+        "config",
+        nargs="?",
+        default="config.yaml",
+        help="YAML config file to use (default: config.yaml)",
+    )
+    return parser.parse_args()
+
+
+def _predict_new_rows(model, config: dict, df_new: pd.DataFrame):
+    output_path = config.get("output", {}).get("predictions_path")
+    if not output_path:
+        return None
+
+    feature_engineering_enabled = config.get("feature_engineering", {}).get("enabled", True)
+    if feature_engineering_enabled:
+        df_new = add_engineered_features(df_new)
+
+    preprocessing_config = dict(config["preprocessing"])
+    preprocessing_config["numeric_features"] = list(preprocessing_config["numeric_features"])
+    if not feature_engineering_enabled:
+        preprocessing_config["numeric_features"] = [
+            column
+            for column in preprocessing_config["numeric_features"]
+            if column not in ENGINEERED_FEATURE_COLUMNS
+        ]
+
+    X_new, _, _ = split_features_target(
+        df_new,
+        config["data"],
+        preprocessing_config.get("mnar_indicator_sources", []),
+    )
+    probabilities = model.predict_proba(X_new)[:, 1]
+    predictions = model.predict(X_new)
+    id_column = config["data"].get("id_column", "id")
+    result = pd.DataFrame({
+        id_column: df_new[id_column],
+        "probability": probabilities,
+        "prediction": predictions,
+    })
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    result.to_csv(output_path, index=False)
+    return result
+
+
 def main():
-    config = load_config()
+    args = parse_args()
+    config = load_config(args.config)
     with tempfile.TemporaryDirectory(prefix="pipeline_cache_") as cache_dir:
         _run_pipeline(config, cache_dir)
 
@@ -237,6 +290,17 @@ def _run_pipeline(config: dict, cache_dir: str):
     )
 
     model.fit(X_train, y_train)
+
+    new_data_path = config.get("data", {}).get("new_path")
+    if new_data_path:
+        df_new = load_data(new_data_path)
+        df_new = clean_dataset(df_new, config["diagnostics"])
+        result = _predict_new_rows(model, config, df_new)
+        if result is not None:
+            report_sections.append(
+                f"New-data predictions saved to {config['output'].get('predictions_path')}: "
+                f"{len(result)} rows, positive rate={result['prediction'].mean():.3f}"
+            )
 
     feature_names = model.named_steps["prep"].get_feature_names_out()
     if "select" in model.named_steps:

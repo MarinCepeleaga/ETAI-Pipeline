@@ -188,25 +188,35 @@ def fairness_report(
     """
     Deliberately simple fairness check -- not a substitute for a real audit, just enough to show that "accuracy" and "fair" are not the same thing.
 
-    For each race group, prints (and returns as text) the false
-    positive rate (share of people who did NOT reoffend but were
-    predicted to) for:
+    For each group, report the false positive rate (share of people who did NOT have the target label but were predicted to) for:
         - our own model
-        - COMPAS's own risk score (score_text != "Low" counts as a "high risk" prediction), for comparison
+        - COMPAS's own risk score, when that column exists for comparison
     """
+    if extras_test is None:
+        extras_test = pd.DataFrame(index=np.arange(len(y_test)))
     df = extras_test.copy()
-    df["y_true"] = y_test.values
+    df["y_true"] = np.asarray(y_test)
     df["y_pred_model"] = _predictions_at_threshold(y_proba, threshold)
-    df["y_pred_compas"] = (df["score_text"] != "Low").astype(int)
+
+    if sensitive_attr not in df.columns:
+        return (
+            f"Fairness report unavailable for {split_label}: sensitive attribute "
+            f"{sensitive_attr!r} is not present in the data."
+        )
 
     lines = [
-        f"False positive rate by race ({split_label})",
-        "(share of people who did NOT reoffend, but were predicted to)",
+        f"False positive rate by {sensitive_attr} ({split_label})",
+        "(share of people who did NOT have the target label, but were predicted to)",
         f"(model probability threshold = {threshold:.2f})",
         "",
     ]
 
-    for label, col in [("Our model", "y_pred_model"), ("COMPAS's own score", "y_pred_compas")]:
+    comparators = [("Our model", "y_pred_model")]
+    if "score_text" in df.columns:
+        df["y_pred_compas"] = (df["score_text"] != "Low").astype(int)
+        comparators.append(("COMPAS's own score", "y_pred_compas"))
+
+    for label, col in comparators:
         lines.append(f"  {label}:")
         for group, g in df.groupby(sensitive_attr):
             negatives = g[g["y_true"] == 0]

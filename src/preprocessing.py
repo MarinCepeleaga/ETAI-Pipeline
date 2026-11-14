@@ -102,25 +102,16 @@ def add_missingness_indicators(df: pd.DataFrame, mnar_indicator_sources: list) -
 
 def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add fixed-formula features that do not learn statistics from the data."""
-    required_columns = {
-        "age",
-        "priors_count",
-        "juv_fel_count",
-        "juv_misd_count",
-        "juv_other_count",
-    }
-    missing_columns = required_columns.difference(df.columns)
-    if missing_columns:
-        raise ValueError(
-            f"Cannot create engineered features; missing columns: {sorted(missing_columns)}"
-        )
-
     out = df.copy()
-    out["priors_per_adult_year"] = out["priors_count"] / (out["age"] - 17).clip(lower=1)
-    out["juvenile_offense_total"] = out[
-        ["juv_fel_count", "juv_misd_count", "juv_other_count"]
-    ].sum(axis=1, min_count=3)
-    out["age_priors_interaction"] = out["age"] * out["priors_count"]
+
+    if {"age", "priors_count"}.issubset(out.columns):
+        out["priors_per_adult_year"] = out["priors_count"] / (out["age"] - 17).clip(lower=1)
+        out["age_priors_interaction"] = out["age"] * out["priors_count"]
+
+    juvenile_columns = ["juv_fel_count", "juv_misd_count", "juv_other_count"]
+    if all(column in out.columns for column in juvenile_columns):
+        out["juvenile_offense_total"] = out[juvenile_columns].sum(axis=1, min_count=3)
+
     return out
 
 

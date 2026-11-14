@@ -170,6 +170,8 @@ go on.
 ├── results/                # created automatically -- one file per run (not tracked in git)
 └── data/
     ├── compas_two_year_recidivism.csv
+    ├── adult_train.csv       # option A training data
+    ├── adult_new.csv         # option A unseen rows for inference
     └── README.md            # problem description + full data dictionary
 ```
 
@@ -186,6 +188,33 @@ This table is updated after each practical class, so you can always see what cha
 | 6 | Ensembles, feature engineering & boosting | AdaBoost, oblique random forest, gradient boosting, histogram gradient boosting, and a Naive Bayes baseline; fixed-formula features with a configuration switch; per-model search spaces support nested tuning. |
 | 7 | Metrics and model comparison | Out-of-fold probabilities; accuracy, balanced accuracy, precision, recall, F1, F-beta, ROC-AUC, and average precision; a configurable selection metric for tuning; probability-thresholded fairness reports and confusion matrices; and a persistent CSV scoreboard with the dummy baseline and each run. |
 | 8 | XGBoost & feature selection | XGBoost support and tuning; leak-safe configurable feature selectors (`vote`, `kbest`, `from_model`) inside the model pipeline; nested tuning of the vote threshold; per-run pipeline caching; and selected-feature reporting. |
+| 9 | Beyond COMPAS (option A) | Added an Adult-income config (`config_adult.yaml`), config-file selection in `main.py`, dataset-agnostic handling for engineered features and fairness reporting, and export of the `adult_new.csv` predictions. |
+
+## Beyond COMPAS — Option A: Adult income
+
+Run it from the repo root:
+```bash
+python main.py config_adult.yaml
+```
+
+What broke, why, and how it was fixed:
+
+| Breakage | Why it broke | Fix |
+|----------|--------------|-----|
+| Hard-coded COMPAS columns | The pipeline assumed `priors_count`, `juv_*`, and `score_text` existed everywhere | Generalised engineered-feature creation to skip missing COMPAS-only columns, and made fairness reporting handle datasets without `score_text` |
+| Sensitive attribute forced into the model | `sex` was still included in the feature list for Adult, even though it should be audited only | Excluded the configured sensitive attr from `preprocessing.categorical_features` while keeping it for fairness reporting |
+| One config file for every dataset | The project always loaded `config.yaml` | `main.py` accepts an optional config path and defaults to `config.yaml` |
+| New-data prediction was not implemented | Adult required scoring the 2,000 unseen rows without dropping or labelling them | Added `data.new_path` handling and CSV export of `id`, probability, and prediction |
+
+Adult run (development-set out-of-fold estimates):
+
+| Metric | Target | Achieved |
+|--------|--------|----------|
+| ROC-AUC | >= 0.90 | 0.905 |
+| Accuracy | >= 0.855 | 0.856 |
+| F1 (class 1, threshold 0.5) | >= 0.66 | 0.67 |
+
+The model kept the Adult features that matter (numeric census variables, workclass, marital status, occupation, relationship, race, native country, and the workclass/occupation missingness indicators) and produced `results/adult/adult_new_predictions.csv` with all 2,000 rows scored. The hardest assumption to catch was that the original pipeline had a few COMPAS-specific columns and metrics baked in, especially the fairness comparison that expected `score_text` to exist. Once those assumptions were made dataset-agnostic, the same code path worked cleanly for both COMPAS and Adult.
 
 ## Environment setup
 
