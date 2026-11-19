@@ -43,12 +43,16 @@ def save_run(
     selection_metric = cv_config.get(
         "selection_metric", tuning_config.get("scoring", "accuracy")
     )
+    imputer = config.get("preprocessing", {}).get("imputation", {}).get(
+        "numeric_strategy", "median"
+    )
 
     header = (
         f"Run: {timestamp}\n"
         f"Model: {config['model']['type']}  params={config['model']['params']}\n"
         f"Test size: {config['test_set']['size']}  "
         f"random_state: {config['test_set']['random_state']}\n"
+        f"Imputer: {imputer}\n"
         f"Feature engineering enabled: "
         f"{config.get('feature_engineering', {}).get('enabled', True)}\n"
         f"Feature selection: {config.get('feature_selection', {'enabled': False})}\n"

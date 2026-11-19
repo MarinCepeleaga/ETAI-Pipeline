@@ -12,13 +12,14 @@ This orchestrates the full (deliberately simple) pipeline:
 import argparse
 from datetime import datetime
 import os
+from pathlib import Path
 import tempfile
 
-import pandas as pd
-import yaml
+import joblib
 from sklearn.model_selection import StratifiedKFold
 
-from src.data import load_data
+from predict import DEFAULT_MODEL_PATH, predict
+from src.data import load_config, load_data
 from src.preprocessing import (
     ENGINEERED_FEATURE_COLUMNS,
     add_engineered_features,
@@ -45,11 +46,6 @@ from src.tuning import (
 )
 
 
-def load_config(path: str = "config.yaml") -> dict:
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the predictive pipeline.")
     parser.add_argument(
@@ -61,43 +57,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def _predict_new_rows(model, config: dict, df_new: pd.DataFrame):
-    output_path = config.get("output", {}).get("predictions_path")
-    if not output_path:
-        return None
-
-    feature_engineering_enabled = config.get("feature_engineering", {}).get("enabled", True)
-    if feature_engineering_enabled:
-        df_new = add_engineered_features(df_new)
-
-    preprocessing_config = dict(config["preprocessing"])
-    preprocessing_config["numeric_features"] = list(preprocessing_config["numeric_features"])
-    if not feature_engineering_enabled:
-        preprocessing_config["numeric_features"] = [
-            column
-            for column in preprocessing_config["numeric_features"]
-            if column not in ENGINEERED_FEATURE_COLUMNS
-        ]
-
-    X_new, _, _ = split_features_target(
-        df_new,
-        config["data"],
-        preprocessing_config.get("mnar_indicator_sources", []),
-    )
-    probabilities = model.predict_proba(X_new)[:, 1]
-    predictions = model.predict(X_new)
-    id_column = config["data"].get("id_column", "id")
-    result = pd.DataFrame({
-        id_column: df_new[id_column],
-        "probability": probabilities,
-        "prediction": predictions,
-    })
-
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    result.to_csv(output_path, index=False)
-    return result
-
-
 def main():
     args = parse_args()
     config = load_config(args.config)
@@ -107,6 +66,7 @@ def main():
 
 def _run_pipeline(config: dict, cache_dir: str):
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_config = config.get("output", {})
 
     df_raw = load_data(config["data"]["path"])
     df_clean = clean_dataset(df_raw, config["diagnostics"])
@@ -134,6 +94,7 @@ def _run_pipeline(config: dict, cache_dir: str):
         config["data"],
         preprocessing_config.get("mnar_indicator_sources", []),
     )
+    imputer = preprocessing_config.get("imputation", {}).get("numeric_strategy", "median")
     X_train, X_test, y_train, y_test, extras_train, extras_test = split_dev_test(
         X,
         y,
@@ -203,6 +164,7 @@ def _run_pipeline(config: dict, cache_dir: str):
     )
     report_sections.append(
         f"Model: {config['model']['type']}\n"
+        f"Imputer: {imputer}\n"
         f"Selection metric: {selection_metric}\n"
         f"No-model floor (dummy, same folds): {selection_metric} = {floor_score:.3f}"
     )
@@ -291,16 +253,17 @@ def _run_pipeline(config: dict, cache_dir: str):
 
     model.fit(X_train, y_train)
 
-    new_data_path = config.get("data", {}).get("new_path")
-    if new_data_path:
-        df_new = load_data(new_data_path)
-        df_new = clean_dataset(df_new, config["diagnostics"])
-        result = _predict_new_rows(model, config, df_new)
-        if result is not None:
-            report_sections.append(
-                f"New-data predictions saved to {config['output'].get('predictions_path')}: "
-                f"{len(result)} rows, positive rate={result['prediction'].mean():.3f}"
-            )
+    new_data_path = config["data"].get("new_path")
+    predictions_path = output_config.get("predictions_path")
+    if new_data_path and predictions_path:
+        predictions_path = Path(predictions_path)
+        result = predict(load_data(new_data_path), model, config)
+        predictions_path.parent.mkdir(parents=True, exist_ok=True)
+        result.to_csv(predictions_path, index=False)
+        report_sections.append(
+            f"New-data predictions saved to {predictions_path}: "
+            f"{len(result)} rows, positive rate={result['prediction'].mean():.3f}"
+        )
 
     feature_names = model.named_steps["prep"].get_feature_names_out()
     if "select" in model.named_steps:
@@ -321,6 +284,14 @@ def _run_pipeline(config: dict, cache_dir: str):
             split_label="locked test set",
         )
     )
+    model_path = Path(output_config.get("model_path", DEFAULT_MODEL_PATH))
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    model.set_params(memory=None)
+    with tempfile.TemporaryDirectory(dir=model_path.parent) as model_dir:
+        temp_model_path = Path(model_dir) / model_path.name
+        joblib.dump(model, temp_model_path)
+        os.replace(temp_model_path, model_path)
+    report_sections.append(f"Fitted pipeline saved to {model_path}")
     report = "\n\n".join(report_sections)
 
     row = {
@@ -330,6 +301,7 @@ def _run_pipeline(config: dict, cache_dir: str):
         "tuned": tuning_enabled,
         "encoder": preprocessing_config["encoder"],
         "scaler": preprocessing_config["scaler"],
+        "imputer": imputer,
         "feature_selection": str(feature_selection_config),
         "params": str(config["model"].get("params", {})),
         "tuned_params": str(study.best_params) if tuning_enabled else "",
@@ -343,9 +315,7 @@ def _run_pipeline(config: dict, cache_dir: str):
             for fold, score in enumerate(final_scores["validation"], start=1)
         },
     }
-    scoreboard_path = config.get("output", {}).get(
-        "scoreboard", "results/runs.csv"
-    )
+    scoreboard_path = output_config.get("scoreboard", "results/runs.csv")
     runs = save_scores(scoreboard_path, row)
     comparable_runs = runs[
         (runs["data"] == row["data"]) & (runs["metric"] == selection_metric)
@@ -358,6 +328,7 @@ def _run_pipeline(config: dict, cache_dir: str):
                 "tuned",
                 "encoder",
                 "scaler",
+                "imputer",
                 "feature_selection",
                 "mean",
                 "std",
@@ -365,13 +336,14 @@ def _run_pipeline(config: dict, cache_dir: str):
                 "floor",
             ]
         ]
+        .fillna({"imputer": "unrecorded"})
         .rename(columns={"mean": selection_metric})
         .to_string(index=False, float_format=lambda value: f"{value:.3f}")
     )
     report += f"\n\nScoreboard (same data and selection metric):\n{scoreboard}\n"
 
     print(report)
-    results_dir = config.get("output", {}).get("results_dir", "results")
+    results_dir = output_config.get("results_dir", "results")
     path = save_run(results_dir, config, report, run_id=run_id)
     print(f"Full results saved to {path}")
     print("Features kept: " + ", ".join(features_kept))

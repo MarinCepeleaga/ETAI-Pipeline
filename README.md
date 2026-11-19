@@ -145,6 +145,10 @@ Week8
 
 The tuned XGBoost model achieved nested-CV ROC-AUC of 0.726 ± 0.011 with feature selection and 0.727 ± 0.013 without it; both runs had locked-test accuracy of 0.674. Using the five displayed fold scores and a test/train ratio of 1/4, the corrected paired test gives a mean ROC-AUC difference (selection minus no selection) of -0.001 (`t = -0.58`, `p ≈ 0.59`), so the small score difference is not statistically significant. Feature selection kept just age, priors_count, and priors_per_adult_year, compared with all 13 preprocessed features in the run without selection. Because the compact model performs essentially as well, I would keep selection enabled for simplicity, while noting that these five folds do not show a measurable performance gain.
 
+Week 10
+
+On the same five COMPAS development folds with tuning disabled, XGBoost achieved mean ROC-AUC of 0.7190 with median, 0.7188 with KNN, 0.7202 with iterative imputation, and 0.7201 with random-forest imputation. The corrected paired tests gave p-values of 0.415 to 0.907 against median, so I kept median for its faster fit. With median, training accuracy was 0.705 and locked-test accuracy was 0.678, a gap of +0.027. The saved pipeline scored all 20 rows in the new COMPAS file.
+
 The task: predict two-year recidivism using ProPublica's COMPAS
 dataset -- the data behind a real 2016 investigation into a risk-
 assessment algorithm actually used by US courts to help inform bail and sentencing decisions. See `data/README.md` for the full problem description and a complete data dictionary before you start.
@@ -158,6 +162,7 @@ go on.
 ```
 .
 ├── main.py                # entry point: run the whole pipeline
+├── predict.py              # score new CSV rows with the saved pipeline
 ├── config.yaml             # all tunable settings live here
 ├── requirements.txt
 ├── src/
@@ -168,8 +173,10 @@ go on.
 │   ├── evaluate.py         # accuracy metrics + fairness check
 │   └── results.py          # saves each run's report to disk
 ├── results/                # created automatically -- one file per run (not tracked in git)
+├── models/                 # fitted pipelines saved by training
 └── data/
     ├── compas_two_year_recidivism.csv
+    ├── compas_new_people.csv
     ├── adult_train.csv       # option A training data
     ├── adult_new.csv         # option A unseen rows for inference
     └── README.md            # problem description + full data dictionary
@@ -189,6 +196,7 @@ This table is updated after each practical class, so you can always see what cha
 | 7 | Metrics and model comparison | Out-of-fold probabilities; accuracy, balanced accuracy, precision, recall, F1, F-beta, ROC-AUC, and average precision; a configurable selection metric for tuning; probability-thresholded fairness reports and confusion matrices; and a persistent CSV scoreboard with the dummy baseline and each run. |
 | 8 | XGBoost & feature selection | XGBoost support and tuning; leak-safe configurable feature selectors (`vote`, `kbest`, `from_model`) inside the model pipeline; nested tuning of the vote threshold; per-run pipeline caching; and selected-feature reporting. |
 | 9 | Beyond COMPAS (option A) | Added an Adult-income config (`config_adult.yaml`), config-file selection in `main.py`, dataset-agnostic handling for engineered features and fairness reporting, and export of the `adult_new.csv` predictions. |
+| 10 | Missing values and deployment | Configurable numeric imputation after scaling, imputer tracking in the scoreboard and run reports, and a saved fitted pipeline with a row-preserving prediction command. |
 
 ## Beyond COMPAS — Option A: Adult income
 
@@ -303,6 +311,32 @@ count for final experiments.
 `.gitignore`) since it contains generated output, not source.
 
 You're free to improve on this structure or restructure it entirely -- what matters is that your project stays runnable end-to-end with a single command, and that each piece (data, preprocessing, model, evaluation) stays easy to find and change independently.
+
+## Missing values
+
+The numeric pipeline scales observed values before filling gaps. To reproduce the comparison, set `tuning.enabled` to `false` and run `python main.py` once per `preprocessing.imputation.numeric_strategy`. I used the same five stratified development folds and XGBoost settings for all four runs, then applied `corrected_paired_test()` to the fold ROC-AUC scores with `test_train_ratio=1/4`.
+
+| Imputer | Mean CV ROC-AUC | Corrected p-value vs. median |
+|---------|----------------:|-----------------------------:|
+| `median` | 0.7190 | — |
+| `knn` | 0.7188 | 0.907 |
+| `iterative` | 0.7202 | 0.658 |
+| `random_forest` | 0.7201 | 0.415 |
+
+Iterative imputation had the highest mean ROC-AUC, ahead of median by 0.0012. The corrected p-values versus median ranged from 0.415 to 0.907, so I kept median for its faster fit. Both iterative strategies reached the configured 10-iteration limit in some fits.
+
+## Predicting new data
+
+Run training and prediction from the project root in the same Python environment.
+
+```bash
+python main.py
+python predict.py data/compas_new_people.csv predictions.csv
+```
+
+Training saves the final fitted pipeline to `output.model_path` in the config (`models/model.joblib` for COMPAS). The sample command writes 20 rows with `id`, the positive-class `probability`, and the binary `prediction` at a threshold of 0.5. It preserves the input order and duplicate IDs. The input CSV can omit the target column.
+
+For Adult income, `python main.py config_adult.yaml` saves `models/adult_model.joblib`. Use `python predict.py data/adult_new.csv predictions.csv --config config_adult.yaml` to score the new Adult rows with that model.
 
 ## Model evaluation
 

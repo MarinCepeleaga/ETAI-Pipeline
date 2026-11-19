@@ -3,12 +3,16 @@
 The sensitive attribute stays out of model inputs and is retained only for
 the fairness reports.
 """
+from inspect import signature
+
 import numpy as np
 import pandas as pd
 from category_encoders import CountEncoder
 from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
-from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import (
     MinMaxScaler,
@@ -146,15 +150,43 @@ _SCALERS = {
     "robust": RobustScaler,
 }
 
+
+def _target_encoder(seed):
+    # Older scikit-learn versions require an integer cv and a separate seed.
+    parameters = signature(TargetEncoder).parameters
+    if "random_state" in parameters and parameters["random_state"].default is None:
+        return TargetEncoder(target_type="binary", cv=5, random_state=seed)
+    return TargetEncoder(
+        target_type="binary",
+        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=seed),
+    )
+
+
 _ENCODERS = {
-    "onehot": lambda: OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-    "ordinal": lambda: OrdinalEncoder(
+    "onehot": lambda seed: OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+    "ordinal": lambda seed: OrdinalEncoder(
         handle_unknown="use_encoded_value", unknown_value=-1
     ),
-    "count": lambda: CountEncoder(handle_unknown=0, handle_missing=0),
-    "target": lambda: TargetEncoder(
-        target_type="binary",
-        cv=5,
+    "count": lambda seed: CountEncoder(handle_unknown=0, handle_missing=0),
+    "target": _target_encoder,
+}
+
+_NUMERIC_IMPUTERS = {
+    "median": lambda cfg, seed: SimpleImputer(strategy="median"),
+    "mean": lambda cfg, seed: SimpleImputer(strategy="mean"),
+    "knn": lambda cfg, seed: KNNImputer(n_neighbors=cfg.get("n_neighbors", 5)),
+    "iterative": lambda cfg, seed: IterativeImputer(
+        max_iter=cfg.get("max_iter", 10), random_state=seed
+    ),
+    "random_forest": lambda cfg, seed: IterativeImputer(
+        estimator=RandomForestRegressor(
+            n_estimators=cfg.get("n_estimators", 50),
+            min_samples_leaf=5,
+            random_state=seed,
+            n_jobs=-1,
+        ),
+        max_iter=cfg.get("max_iter", 10),
+        random_state=seed,
     ),
 }
 
@@ -167,14 +199,22 @@ def build_preprocessor(preprocessing_config: dict) -> ColumnTransformer:
     categorical_features = preprocessing_config["categorical_features"]
     indicator_sources = preprocessing_config.get("mnar_indicator_sources", [])
     imputation = preprocessing_config.get("imputation", {})
+    seed = preprocessing_config.get("random_state")
+    numeric_strategy = imputation.get("numeric_strategy", "median")
+    if numeric_strategy not in _NUMERIC_IMPUTERS:
+        raise ValueError(
+            f"Unknown numeric_strategy: {numeric_strategy!r}. "
+            f"Options: {', '.join(_NUMERIC_IMPUTERS)}."
+        )
 
     scaler_factory = _SCALERS[scaler_name]
     scaler = scaler_factory() if callable(scaler_factory) else scaler_factory
-    encoder = _ENCODERS[encoder_name]()
+    encoder = _ENCODERS[encoder_name](seed)
 
+    # Scale observed values before KNN computes distances between rows.
     numeric_pipeline = Pipeline([
-        ("impute", SimpleImputer(strategy=imputation.get("numeric_strategy", "median"))),
         ("scale", scaler),
+        ("impute", _NUMERIC_IMPUTERS[numeric_strategy](imputation, seed)),
     ])
     categorical_pipeline = Pipeline([
         ("impute", SimpleImputer(strategy=imputation.get("categorical_strategy", "most_frequent"))),
